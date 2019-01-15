@@ -47,8 +47,9 @@ require_once "$toolboxPath/models/toolsType.php";
 use Components\Toolbox\Helpers\ToolAuthHelper;
 use Components\Tags\Models\Cloud;
 use Hubzero\Database\Relational;
+use stdClass;
 
-class Tool extends Relational
+class Tool extends Relational implements \Hubzero\Search\Searchable
 {
 
 	/*
@@ -324,6 +325,90 @@ class Tool extends Relational
 		return $downloads;
 	}
 
+	/**
+	 * Namespace used for solr Search
+	 *
+	 * @return  string
+	 */
+	public static function searchNamespace()
+	{
+		$searchNamespace = 'toolbox';
+		return $searchNamespace;
+	}
+
+	/**
+	 * Generate solr search Id
+	 *
+	 * @return  string
+	 */
+	public function searchId()
+	{
+		$searchId = self::searchNamespace() . '-' . $this->id;
+		return $searchId;
+	}
+
+	/**
+	 * Generate search document for Solr
+	 *
+	 * @return  array
+	 */
+	public function searchResult()
+	{
+		if ($this->get('published') != 1 || $this->get('archived') == 1)
+		{
+			return false;
+		}
+		$toolbox = new stdClass;
+		$toolbox->title = $this->get('name');
+		$toolbox->hubtype = self::searchNamespace();
+		$toolbox->id = $this->searchId();
+		$toolbox->description = $this->get('learning_objectives');
+		$toolbox->source_s = $this->get('source');
+		$tags = $this->tags;
+		if (!empty($tags))
+		{
+			foreach ($tags as $tag)
+			{
+				$title = $tag->get('raw_tag', '');
+				$description = $tag->get('tag', '');
+				$label = $tag->get('label', '');
+				$toolbox->tags[] = array(
+					'id' => 'tag-' . $tag->id,
+					'title' => $title,
+					'description' => $description,
+					'access_level' => $tag->admin == 0 ? 'public' : 'private',
+					'type' => 'toolbox-tag',
+					'badge_b' => $label == 'badge' ? true : false
+				);
+			}
+		}
+		$toolbox->url = rtrim(Request::root(), '/') . Route::urlForClient('site', 'index.php?option=com_toolbox&id=' . $this->get('id'));
+		return $toolbox;
+	}
+
+	/**
+	 * Get total number of records that will be indexed by Solr.
+	 *
+	 * @return integer
+	 */
+	public static function searchTotal()
+	{
+		$total = self::all()->total();
+		return $total;
+	}
+
+	/**
+	 * Get records to be included in solr index
+	 *
+	 * @param   integer  $limit
+	 * @param   integer  $offset
+	 * @return  object   Hubzero\Database\Rows
+	 */
+	public static function searchResults($limit, $offset = 0)
+	{
+		return self::all()->start($offset)->limit($limit)->rows();
+	}
+
 	/*
 	 * Returns associated Link records
 	 *
@@ -417,6 +502,25 @@ class Tool extends Relational
 		$tagCloud = $cloud->render();
 
 		return $tagCloud;
+	}
+
+	/*
+	 * Translates external cost boolean into descriptive phrase
+	 *
+	 * @return   string
+	 */
+	public function costDescription()
+	{
+		if ($this->get('external_cost'))
+		{
+			$costDescription = Lang::txt('COM_TOOLBOX_TOOL_EXTERNAL_COST');
+		}
+		else
+		{
+			$costDescription = '';
+		}
+
+		return $costDescription;
 	}
 
 	/*
